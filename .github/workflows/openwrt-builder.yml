@@ -2,7 +2,7 @@
 # https://github.com/P3TERX/Actions-OpenWrt
 #
 # File: .github/workflows/openwrt-bulder.yml
-# Description: Build OpenWrt using GitHub Actions
+# Description: Build OpenWrt using GitHub Actions (multi-project support)
 #
 # Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
 #
@@ -17,20 +17,47 @@ on:
   workflow_dispatch:
 
 env:
-  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
-  REPO_BRANCH: openwrt-24.10-6.6
-  FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
+  # 可选：是否上传 bin 目录，留空则不上传
   UPLOAD_BIN_DIR: false
+  # 可选：是否上传 firmware 目录，留空则不上传
   UPLOAD_FIRMWARE: true
+  # 可选：是否上传 release 目录，留空则不上传
   UPLOAD_RELEASE: true
+  # 可选：修改时区，留空则不修改
   TZ: Asia/Shanghai
+  # 可选：修改默认 LAN IP（如 192.168.50.1），留空则不修改
+  DEFAULT_IP: "192.168.31.1"
+  # 可选：修改默认主机名（如 MyRouter），留空则不修改
+  DEFAULT_HOSTNAME: ""
+  # 可选：修改 LAN 域名（如 mylan，则主机名解析为 hostname.mylan），留空则不修改
+  LAN_DOMAIN: ""
+  # 可选：修改默认 WiFi 名称（SSID），留空则不修改
+  DEFAULT_WIFI_SSID: "AX6000"
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: padavanonly-mt798x-6.6
+            repo_url: https://github.com/padavanonly/immortalwrt-mt798x-6.6
+            repo_branch: openwrt-24.10-6.6
+            feeds_conf: projects/padavanonly-mt798x-6.6/feeds.conf.default
+            config_file: projects/padavanonly-mt798x-6.6/.config
+          - project: hanwckf-mt798x
+            repo_url: https://github.com/hanwckf/immortalwrt-mt798x
+            repo_branch: openwrt-21.02
+            feeds_conf: projects/hanwckf-mt798x/feeds.conf.default
+            config_file: projects/hanwckf-mt798x/.config
+          - project: immortalwrt
+            repo_url: https://github.com/immortalwrt/immortalwrt
+            repo_branch: master
+            feeds_conf: projects/immortalwrt/feeds.conf.default
+            config_file: projects/immortalwrt/.config
 
     steps:
     - name: Checkout
@@ -53,12 +80,17 @@ jobs:
 
     - name: Clone source code
       working-directory: /workdir
+      env:
+        REPO_URL: ${{ matrix.repo_url }}
+        REPO_BRANCH: ${{ matrix.repo_branch }}
       run: |
         df -hT $PWD
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     - name: Load custom feeds
+      env:
+        FEEDS_CONF: ${{ matrix.feeds_conf }}
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
@@ -72,9 +104,15 @@ jobs:
       run: cd openwrt && ./scripts/feeds install -a
 
     - name: Load custom configuration
+      env:
+        CONFIG_FILE: ${{ matrix.config_file }}
       run: |
+        if [ ! -e "$CONFIG_FILE" ]; then
+          echo "::error::Missing config: $CONFIG_FILE (add .config for this project or comment out this project in matrix)"
+          exit 1
+        fi
         [ -e files ] && mv files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        mv $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
@@ -99,6 +137,7 @@ jobs:
         DEVICE_NAME_STR=$(paste -sd'_' DEVICE_NAMES)
         [ -n "$DEVICE_NAME_STR" ] && echo "DEVICE_NAME=_${DEVICE_NAME_STR}" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        echo "PROJECT=${{ matrix.project }}" >> $GITHUB_ENV
 
     - name: Check space usage
       if: (!cancelled())
@@ -108,7 +147,7 @@ jobs:
       uses: actions/upload-artifact@main
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
-        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: OpenWrt_bin_${{ matrix.project }}${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: openwrt/bin
 
     - name: Organize files
@@ -124,16 +163,17 @@ jobs:
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: OpenWrt_firmware_${{ matrix.project }}${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
     - name: Generate release tag
       id: tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+        echo "release_tag=$(date +"%Y.%m.%d-%H%M")_${{ matrix.project }}" >> $GITHUB_OUTPUT
         touch release.txt
-        [ ${UPLOAD_GOFILE} = true && ${{ steps.gofile.outputs.url }} ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
+        echo "Project: ${{ matrix.project }}" >> release.txt
+        [ "${UPLOAD_GOFILE}" = "true" ] && [ -n "${{ steps.gofile.outputs.url }}" ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware to release

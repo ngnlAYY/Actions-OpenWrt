@@ -17,6 +17,19 @@ A template for building OpenWrt with GitHub Actions
 - Click the `Run workflow` button.
 - When the build is complete, click the `Artifacts` button in the upper right corner of the Actions page to download the binaries.
 
+## 多项目编译 (Multi-project)
+
+本仓库支持同时编译多个 ImmortalWrt 项目，每个项目可单独配置源码、feeds 和 `.config`：
+
+| 项目 | 源码仓库 | 配置与 feeds 位置 |
+|------|----------|-------------------|
+| padavanonly-mt798x-6.6 | padavanonly/immortalwrt-mt798x-6.6 | `projects/padavanonly-mt798x-6.6/` |
+| hanwckf-mt798x | [hanwckf/immortalwrt-mt798x](https://github.com/hanwckf/immortalwrt-mt798x) | `projects/hanwckf-mt798x/` |
+| immortalwrt | [immortalwrt/immortalwrt](https://github.com/immortalwrt/immortalwrt) | `projects/immortalwrt/` |
+
+- 在 `.github/workflows/openwrt-builder.yml` 的 `matrix.include` 中可注释掉暂不使用的项目。
+- 新增项目：在 `matrix.include` 增加一项，并在 `projects/<名称>/` 下放置 `feeds.conf.default` 和 `.config`。
+
 ## Tips
 
 - It may take a long time to create a `.config` file and build the OpenWrt firmware. Thus, before create repository to build your own firmware, you may check out if others have already built it which meet your needs by simply [search `Actions-Openwrt` in GitHub](https://github.com/search?q=Actions-openwrt).

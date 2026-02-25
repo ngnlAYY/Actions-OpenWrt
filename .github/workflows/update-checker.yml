@@ -2,7 +2,7 @@
 # https://github.com/P3TERX/Actions-OpenWrt
 #
 # File: .github/workflows/update-checker.yml
-# Description: Source code update checker
+# Description: Source code update checker (multi-repo)
 #
 # Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
 #
@@ -12,10 +12,6 @@
 
 name: Update Checker
 
-env:
-  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
-  REPO_BRANCH: openwrt-24.10-6.6
-
 on:
   workflow_dispatch:
 #  schedule:
@@ -24,13 +20,26 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: padavanonly-mt798x-6.6
+            repo_url: https://github.com/padavanonly/immortalwrt-mt798x-6.6
+            repo_branch: openwrt-24.10-6.6
+          - project: hanwckf-mt798x
+            repo_url: https://github.com/hanwckf/immortalwrt-mt798x
+            repo_branch: openwrt-21.02
+          - project: immortalwrt
+            repo_url: https://github.com/immortalwrt/immortalwrt
+            repo_branch: master
 
     steps:
-
     - name: Get Commit Hash
       id: getHash
       run: |
-        git clone --depth 1 $REPO_URL -b $REPO_BRANCH .
+        git clone --depth 1 ${{ matrix.repo_url }} -b ${{ matrix.repo_branch }} repo
+        cd repo
         echo "commitHash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
     - name: Compare Commit Hash
@@ -38,7 +47,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: .commitHash
-        key: commitHash_${{ steps.getHash.outputs.commitHash }}
+        key: commitHash_${{ matrix.project }}_${{ steps.getHash.outputs.commitHash }}
 
     - name: Save New Commit Hash
       if: steps.cacheHash.outputs.cache-hit != 'true'
